@@ -1,0 +1,69 @@
+esphome:
+  name: clock
+  friendly_name: Clock
+
+bk72xx:
+  board: cb3s
+
+external_components:
+  - source: 
+        type: git
+        url: https://github.com/psolyca/esphome-tuya-low-power
+    refresh: 10s
+    components: [tuya_low_power]
+
+# Enable logging
+logger:
+  level: VERBOSE
+
+# Enable Home Assistant API
+api:
+
+wifi:
+  ssid: my_ssid
+  password: my_password 
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Clock Entrance Fallback Hotspot"
+    password: "56LdyK8AxJmm"
+
+captive_portal:
+
+uart:
+  tx_pin: TX1
+  rx_pin: RX1
+  baud_rate: 9600
+
+tuya_low_power:
+  time_id: hass_time
+  reset_pin:
+    number: P24
+    inverted: false
+
+time:
+  - platform: homeassistant
+    id: hass_time
+
+button:
+  - platform: restart
+    id: restart_station
+    internal: true
+
+#Specific to the modded WHS20
+#binary_sensor:
+#  - platform: gpio
+#    pin:
+#      number: P24
+#      inverted: false
+#    name: "Enable pin"
+#    on_state:
+#      then:
+#        - button.press: restart_station
+#        - lambda: |-
+#            if (!x) {
+#              id(restart_station).press();
+#            }
+
+safe_mode:
+

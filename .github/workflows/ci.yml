@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref}}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.esphome-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        esphome-version:
+          - stable
+          - beta
+          - dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Build
+        uses: esphome/build-action@v8.1.0
+        with:
+          version: ${{ matrix.esphome-version }}
+          yaml-file: config/tuya_low_power.yaml

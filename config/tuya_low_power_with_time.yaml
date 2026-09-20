@@ -1,0 +1,59 @@
+esphome:
+  name: tuyalowpower
+  friendly_name: Tuya Low Power
+
+bk72xx:
+  board: cb3s
+
+external_components:
+  - source: 
+        type: git
+        url: https://github.com/psolyca/esphome-tuya-low-power
+    refresh: 10s
+    components: [tuya_low_power]
+
+# Enable logging
+logger:
+  level: VERBOSE
+
+# Enable Home Assistant API
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: wifi_ssid
+  password: wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Fallback Hotspot"
+    password: "password"
+# Some Tuya devices could not be up for 1 min.
+# So we can mark a successful start after connection
+# or disable safe_mode (option below)
+#  on_connect:
+#    then:
+#      - safe_mode.mark_successful
+
+captive_portal:
+    
+uart:
+  tx_pin: TX1
+  rx_pin: RX1
+  baud_rate: 9600
+
+tuya_low_power:
+# Should be used for some devices where time is needed
+  time_id: hass_time
+
+time:
+  - platform: homeassistant
+    id: hass_time
+    timezone: Europe/Paris
+
+# Some Tuya devices could not be up for 1 min.
+# So safe_mode should be disabled or `on_safe_mode` automation
+safe_mode:
+  disabled: true
