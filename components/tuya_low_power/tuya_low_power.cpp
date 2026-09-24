@@ -24,7 +24,7 @@ static const int COMMAND_DELAY = 10;
 static const int RECEIVE_TIMEOUT = 300;
 static const int MAX_RETRIES = 5;
 // Max bytes to log for datapoint values (larger values are truncated)
-static constexpr size_t MAX_DATAPOINT_LOG_BYTES = 16;
+static constexpr size_t MAX_DATAPOINT_LOG_BYTES = 256;
 
 void TuyaLowPower::setup() {}
 
@@ -32,6 +32,7 @@ void TuyaLowPower::loop() {
   // Communication is initiated by the network module
   // No other command should be received before
   if (this->init_state_ == TuyaInitState::INIT_HANDSHAKE) {
+    ESP_LOGD(TAG, "Device initialisation - Send product query");
     this->send_empty_command_(TuyaCommandType::PRODUCT);
     this->init_state_ = TuyaInitState::HANDSHAKE_DONE;
   } else if (this->init_state_ == TuyaInitState::INIT_NETWORK ||
@@ -252,7 +253,7 @@ void TuyaLowPower::handle_command_(uint8_t command, uint8_t version, const uint8
 
       this->send_command_(TuyaCommand{.cmd = command_type, .payload = std::vector<uint8_t>{0x00}});
       break;
-    case TuyaCommandType::DATAPOINT_DELIVER:
+    case TuyaCommandType::DATAPOINT_DELIVER: // 0x09
       break;
     case TuyaCommandType::NETWORK_TEST:
       this->send_command_(
@@ -278,23 +279,15 @@ void TuyaLowPower::handle_command_(uint8_t command, uint8_t version, const uint8
         ESP_LOGW(TAG, "LOCAL_TIME_QUERY is not handled because time is not configured");
       }
       break;
-    // With this command, the MCU request instruction/set commands.
-    // Thus, on ESPHome YAML configuration :
-    //    MQTT keepalive option should be set to 0 or 120 s to avoir unavailability of the device.
-    //    Device should have the MQTT command_retain value set to true
-    //    Device should have the on_connect trigger
-    // On HA, the device could be changed as needed even if device is disconnected
-    // MQTT or API (?) fetch value on each boot and compose the Datapoint value
-    // This value is send with the DATAPOINT_CACHED command
     case TuyaCommandType::DATAPOINT_CACHED:
-      this->send_empty_command_(TuyaCommandType::DATAPOINT_CACHED);
+      this->send_cached_datapoint_command_();
       break;
     default:
       ESP_LOGE(TAG, "Invalid command (0x%02X) received", command);
   }
 }
 
-void TuyaLowPower::handle_datapoints_(const uint8_t *buffer, size_t len, uint8_t async) {
+void TuyaLowPower::handle_datapoints_(const uint8_t *buffer, size_t len, uint8_t async, bool cache) {
   if (async == 1) {
     buffer = buffer + 7;
   }
@@ -388,22 +381,35 @@ void TuyaLowPower::handle_datapoints_(const uint8_t *buffer, size_t len, uint8_t
     if (skip)
       continue;
 
-    // Update internal datapoints
-    bool found = false;
-    for (auto &other : this->datapoints_) {
-      if (other.id == datapoint.id) {
-        other = datapoint;
-        found = true;
+    if (!cache) {
+      // Update internal datapoints
+      bool found = false;
+      for (auto &other : this->datapoints_) {
+        if (other.id == datapoint.id) {
+          other = datapoint;
+          found = true;
+        }
       }
-    }
-    if (!found) {
-      this->datapoints_.push_back(datapoint);
-    }
+      if (!found) {
+        this->datapoints_.push_back(datapoint);
+      }
 
-    // Run through listeners
-    for (auto &listener : this->listeners_) {
-      if (listener.datapoint_id == datapoint.id)
-        listener.on_datapoint(datapoint);
+      // Run through listeners
+      for (auto &listener : this->listeners_) {
+        if (listener.datapoint_id == datapoint.id)
+          listener.on_datapoint(datapoint);
+      }
+    } else {
+      bool found = false;
+      for (auto &other : this->cached_datapoints_) {
+        if (other.id == datapoint.id) {
+          other = datapoint;
+          found = true;
+        }
+      }
+      if (!found) {
+        this->cached_datapoints_.push_back(datapoint);
+      }
     }
   }
 }
@@ -687,7 +693,64 @@ void TuyaLowPower::send_datapoint_command_(uint8_t datapoint_id, TuyaDatapointTy
   buffer.push_back(data.size() >> 0);
   buffer.insert(buffer.end(), data.begin(), data.end());
 
+  // By default cache datapoint one by one
+  // Updating all datapoints could be possible
+  /*if (this->cached_datapoints_.empty())
+    this->cached_datapoints_ = this->datapoints_;*/
+  this->handle_datapoints_(buffer.data(), buffer.size(), 0, true); //Cache datapoints
+
   this->send_command_(TuyaCommand{.cmd = TuyaCommandType::DATAPOINT_DELIVER, .payload = buffer});
+}
+
+void TuyaLowPower::send_cached_datapoint_command_() {
+  std::vector<uint8_t> buffer;
+  buffer.push_back(0x01); //Success
+  buffer.push_back(0x00); //Number of dp
+  if (!this->cached_datapoints_.empty()) {
+    uint8_t number_datapoint = 0x00;
+    for (auto &datapoint : this->cached_datapoints_) {
+      buffer.push_back(datapoint.id);
+      buffer.push_back(static_cast<uint8_t>(datapoint.type));
+      buffer.push_back(datapoint.len >> 8);
+      buffer.push_back(datapoint.len >> 0);
+      std::vector<uint8_t> data;
+      switch (datapoint.type) {
+        case TuyaDatapointType::RAW:
+          buffer.insert(buffer.end(), datapoint.value_raw.begin(), datapoint.value_raw.end());
+          break;
+        case TuyaDatapointType::BOOLEAN:
+          buffer.insert(buffer.end(), datapoint.value_bool);
+          break;
+        case TuyaDatapointType::INTEGER:
+          data.push_back(datapoint.value_uint >> 24);
+          data.push_back(datapoint.value_uint >> 16);
+          data.push_back(datapoint.value_uint >> 8);
+          data.push_back(datapoint.value_uint >> 0);
+          buffer.insert(buffer.end(), data.begin() , data.end());
+          break;
+        case TuyaDatapointType::STRING:
+          buffer.insert(buffer.end(), datapoint.value_string.begin(), datapoint.value_string.end());
+          break;
+        case TuyaDatapointType::ENUM:
+          buffer.insert(buffer.end(), datapoint.value_enum);
+          break;
+        case TuyaDatapointType::BITMASK:
+          data.push_back(datapoint.value_bitmask >> 24);
+          data.push_back(datapoint.value_bitmask >> 16);
+          data.push_back(datapoint.value_bitmask >> 8);
+          data.push_back(datapoint.value_bitmask >> 0);
+          buffer.insert(buffer.end(), data.begin() , data.end());
+          break;
+        default:
+          return;
+      }
+      number_datapoint += 0x01;
+    }
+    buffer.at(1) = number_datapoint;
+    this->cached_datapoints_.clear();
+  }
+
+  this->send_command_(TuyaCommand{.cmd = TuyaCommandType::DATAPOINT_CACHED, .payload = buffer});
 }
 
 void TuyaLowPower::register_listener(uint8_t datapoint_id, const std::function<void(TuyaDatapoint)> &func) {

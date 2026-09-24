@@ -117,7 +117,7 @@ class TuyaLowPower final : public Component, public uart::UARTDevice {
 
  protected:
   void handle_char_(uint8_t c);
-  void handle_datapoints_(const uint8_t *buffer, size_t len, uint8_t async);
+  void handle_datapoints_(const uint8_t *buffer, size_t len, uint8_t async = 0, bool cache = false);
   optional<TuyaDatapoint> get_datapoint_(uint8_t datapoint_id);
   bool validate_message_();
 
@@ -131,6 +131,7 @@ class TuyaLowPower final : public Component, public uart::UARTDevice {
   void set_string_datapoint_value_(uint8_t datapoint_id, const std::string &value, bool forced);
   void set_raw_datapoint_value_(uint8_t datapoint_id, const std::vector<uint8_t> &value, bool forced);
   void send_datapoint_command_(uint8_t datapoint_id, TuyaDatapointType datapoint_type, std::vector<uint8_t> data);
+  void send_cached_datapoint_command_();
   void set_reset_pin_();
   void report_network_status_();
   TuyaNetworkState get_network_status_code_();
@@ -155,6 +156,7 @@ class TuyaLowPower final : public Component, public uart::UARTDevice {
   std::string product_;
   std::vector<TuyaDatapointListener> listeners_;
   std::vector<TuyaDatapoint> datapoints_;
+  std::vector<TuyaDatapoint> cached_datapoints_;
   std::vector<uint8_t> rx_message_;
   std::vector<uint8_t> ignore_mcu_update_on_datapoints_{};
   std::vector<TuyaCommand> command_queue_;
