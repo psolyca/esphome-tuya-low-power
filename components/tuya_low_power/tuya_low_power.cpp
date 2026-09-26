@@ -213,6 +213,8 @@ void TuyaLowPower::handle_command_(uint8_t command, uint8_t version, const uint8
       } else if (this->init_state_ == TuyaInitState::INIT_CLOUD) {
 #endif
         this->init_state_ = TuyaInitState::INIT_DONE;
+        this->dump_config();
+        this->initialized_callback_.call();
       }
       break;
     }
