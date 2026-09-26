@@ -213,6 +213,7 @@ void TuyaLowPower::handle_command_(uint8_t command, uint8_t version, const uint8
       } else if (this->init_state_ == TuyaInitState::INIT_CLOUD) {
 #endif
         this->init_state_ = TuyaInitState::INIT_DONE;
+        this->initialized_callback_.call();
       }
       break;
     }
@@ -250,6 +251,7 @@ void TuyaLowPower::handle_command_(uint8_t command, uint8_t version, const uint8
     case TuyaCommandType::DATAPOINT_SYNC:   // 0x05
     case TuyaCommandType::DATAPOINT_ASYNC:  // 0x08
       this->handle_datapoints_(buffer, len, command_type == TuyaCommandType::DATAPOINT_ASYNC ? 1 : 0);
+      this->dump_config();
 
       this->send_command_(TuyaCommand{.cmd = command_type, .payload = std::vector<uint8_t>{0x00}});
       break;
