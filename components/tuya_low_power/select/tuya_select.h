@@ -20,6 +20,8 @@ class TuyaLPSelect final : public select::Select, public Component {
     this->is_int_ = is_int;
   }
   void set_select_mappings(std::vector<uint8_t> mappings) { this->mappings_ = std::move(mappings); }
+  void set_initial_index(uint8_t index) { this->initial_index_ = index; }
+  void set_restore_index(bool index) { this->restore_index_ = index; }
 
  protected:
   void control(size_t index) override;
@@ -29,6 +31,10 @@ class TuyaLPSelect final : public select::Select, public Component {
   uint8_t select_id_;
   std::vector<uint8_t> mappings_;
   bool is_int_ = false;
+  optional<uint8_t> initial_index_{};
+  bool restore_index_{false};
+
+  ESPPreferenceObject pref_;
 };
 
 }  // namespace esphome::tuya_low_power
